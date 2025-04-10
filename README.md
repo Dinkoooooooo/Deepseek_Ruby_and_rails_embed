@@ -1,3 +1,4 @@
+
 # Documentation: Ollama Model Query and Job Status
 
 This document describes the process of querying an AI model via the `ollama_models` API and tracking the status of the asynchronous job.
@@ -68,3 +69,60 @@ The client polls the `job_status` endpoint with the `job_id` to check if the job
    {
      "state": "pending"
    }
+   ```
+2. **After Completion**:
+   ```json
+   {
+     "state": "done",
+     "data": "<think>
+
+</think>
+
+Hi! I'm DeepSeek-R1, an artificial intelligence assistant created by DeepSeek. ..."
+   }
+   ```
+
+---
+
+## **4. Final Job Completion**
+
+### **Background Job Actions**
+Once the job completes:
+1. Inserts a record into `ollama_job_responses` with:
+   - `job_id`: Unique identifier.
+   - `prompt`: Original input.
+   - `state`: `"done"`.
+   - `data`: The model's response.
+2. Commits the transaction, making the result accessible via `job_status`.
+
+---
+
+## **Summary of Key Components**
+
+| Component                        | Description                                                                 |
+|----------------------------------|-----------------------------------------------------------------------------|
+| **Controller**                   | `Api::OllamaModelsController`                                              |
+| **Query Method**                 | `query`: Enqueues the background job.                                       |
+| **Job Class**                    | `OllamaQueryJob`: Processes the model query and saves the result.           |
+| **Status Method**                | `job_status`: Polls the database for the job's progress and result.         |
+| **Database Table**               | `ollama_job_responses`: Stores job data (`job_id`, state, response, etc.).  |
+| **Polling**                      | Repeated calls to `job_status` track the job's progress.                    |
+
+---
+
+## **Flow Diagram**
+
+1. **Client** sends `POST /api/ollama_models/query`.
+2. **Server** enqueues `OllamaQueryJob`:
+   - Generates a `job_id`.
+   - Responds with `202 Accepted`.
+3. **Job Worker** executes `OllamaQueryJob`:
+   - Processes the prompt.
+   - Saves the result to `ollama_job_responses`.
+4. **Client** polls `GET /api/ollama_models/job_status?job_id=<job_id>`:
+   - Returns `"pending"` until complete.
+   - Eventually returns the model's result.
+
+---
+
+Let me know if you'd like further modifications or enhancements!
