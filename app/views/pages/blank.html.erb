@@ -1,0 +1,165 @@
+  <h1>Pages#blank</h1>
+  <p>Find me in app/views/pages/blank.html.erb</p>
+
+  <!-- Chat Widget -->
+  <div id="widget-container">
+    <!-- Widget Header -->
+    <div class="widget-header">
+      Chat Widget
+    </div>
+    <!-- Widget Body -->
+    <div class="widget-body">
+      <!-- Result Block -->
+      <div class="widget-result" id="widget-result">
+        <!-- API response will be displayed here -->
+      </div>
+      <!-- Input Block -->
+      <textarea class="widget-input" placeholder="Type your prompt here..."></textarea>
+      <button class="widget-button">Submit</button>
+    </div>
+  </div>
+
+  <style>
+    /* Widget container */
+    #widget-container {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      width: 300px;
+      background-color: #ffffff;
+      border: 1px solid #ccc;
+      border-radius: 10px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      font-family: Arial, sans-serif;
+      overflow: hidden;
+    }
+
+    /* Widget header */
+    .widget-header {
+      background-color: #2596be;
+      color: white;
+      padding: 10px;
+      text-align: center;
+      font-size: 16px;
+      font-weight: bold;
+    }
+
+    /* Widget body */
+    .widget-body {
+      padding: 10px;
+    }
+
+    /* Result block */
+    .widget-result {
+      width: 100%;
+      height: 100px;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      background-color: #f9f9f9;
+      font-size: 14px;
+      box-sizing: border-box;
+      overflow-y: auto; /* Enable scrolling if content overflows */
+      margin-bottom: 10px; /* Space between result block and input */
+    }
+
+    /* Textarea for input */
+    .widget-input {
+      width: 100%;
+      height: 100px;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      resize: none;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+
+    /* Submit button */
+    .widget-button {
+      width: 100%;
+      padding: 10px;
+      margin-top: 10px;
+      background-color: #2596be;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    .widget-button:hover {
+      background-color: #1e7a9e;
+    }
+  </style>
+
+<script>
+  document.querySelector('.widget-button').addEventListener('click', async function () {
+    const input = document.querySelector('.widget-input').value.trim();
+    const resultBlock = document.getElementById('widget-result');
+
+    if (!input) {
+      alert('Please enter a prompt!');
+      return;
+    }
+
+    try {
+      // Clear the result block before starting
+      resultBlock.textContent = '';
+
+      // Make a POST request to the API
+      const response = await fetch('<%= url_for(controller: "api/ollama_models", action: "query") %>', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': '<%= form_authenticity_token %>'
+        },
+        body: JSON.stringify({
+          prompt: input
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status}`);
+      }
+
+      const responseData = await response.json();
+      console.log('API Response:', responseData);
+
+
+      if (responseData.job_id) {
+        // Start polling for job status
+        pollJobStatus(responseData.job_id, resultBlock);
+      } else {
+        resultBlock.textContent = 'No job ID received.';
+      }
+    } catch (error) {
+      console.error('Error:', error);
+      alert('An error occurred while submitting the prompt.');
+    }
+  });
+
+function pollJobStatus(jobId, resultBlock) {
+  const interval = setInterval(() => {
+    fetch(`/api/ollama_models/job_status?job_id=${jobId}`)
+      .then(response => response.json())
+      .then(data => {
+        console.log('Polling response:', data); // Debug logging
+        
+        if (data.state === 'done') { // Match your backend's actual state
+          clearInterval(interval);
+          resultBlock.textContent = data.data || 'Job completed with no data.';
+        } else if (data.state === 'error') {
+          clearInterval(interval);
+          resultBlock.textContent = `Error: ${data.error}`;
+        }
+        // Note: 'pending' state will just continue polling
+      })
+      .catch(error => {
+        clearInterval(interval);
+        resultBlock.textContent = 'An error occurred while polling job status.';
+        console.error('Polling error:', error);
+      });
+  }, 1000); // Reduced to 2 seconds for better UX
+}
+</script>
