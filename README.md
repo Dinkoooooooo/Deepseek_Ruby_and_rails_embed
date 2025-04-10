@@ -74,11 +74,7 @@ The client polls the `job_status` endpoint with the `job_id` to check if the job
    ```json
    {
      "state": "done",
-     "data": "<think>
-
-    </think>
-
-    Hi! I'm DeepSeek-R1, an artificial intelligence assistant created by DeepSeek. ..."
+     "data": "<think></think>Hi! I'm DeepSeek-R1, an artificial intelligence assistant created by DeepSeek. ..."
    }
    ```
 
