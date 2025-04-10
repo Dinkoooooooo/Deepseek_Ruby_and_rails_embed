@@ -120,5 +120,3 @@ Once the job completes:
    - Eventually returns the model's result.
 
 ---
-
-Let me know if you'd like further modifications or enhancements!
