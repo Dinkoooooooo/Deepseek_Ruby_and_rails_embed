@@ -9,6 +9,8 @@ This document describes the process of querying an AI model via the `ollama_mode
 
 ### **Endpoint**
 **POST `/api/ollama_models/query`**
+
+
 (An example of the request can be seen at app/views/pages/blank.html.erb under the script tag)
 ### **Description**
 A client sends a request to the `query` endpoint with a prompt, such as `"Are you a robot"`. This triggers the following steps:
