@@ -3,6 +3,13 @@
 
 This document describes the process of querying an AI model via the `ollama_models` API and tracking the status of the asynchronous job.
 
+Documentation assumes a llm was installed, if noy yet installed it can be done with the following,
+```
+$ curl -fsSL https://ollama.com/install.sh | sh
+$ ollama pull deepseek-r1:1.5b-qwen-distill-q4_K_M
+$ ollama run deepseek-r1:1.5b-qwen-distill-q4_K_M
+```
+
 ---
 
 ## **1. Initial Request**
