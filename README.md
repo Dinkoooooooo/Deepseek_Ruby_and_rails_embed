@@ -1,131 +1,237 @@
+Here's a complete step-by-step guide to set up a ChatGPT integration using Delayed Job for background processing.
 
-# Documentation: Ollama Model Query and Job Status
+1. Setup Delayed Job
+Add Delayed Job to your Gemfile:
 
-This document describes the process of querying an AI model via the `ollama_models` API and tracking the status of the asynchronous job.
+ruby
+Copy
+Edit
+gem 'delayed_job_active_record'
+Install the gem:
 
-Documentation assumes a llm was installed, if noy yet installed it can be done with the following,
-```
-$ curl -fsSL https://ollama.com/install.sh | sh
-$ ollama pull deepseek-r1:1.5b-qwen-distill-q4_K_M
-$ ollama run deepseek-r1:1.5b-qwen-distill-q4_K_M
-```
+bash
+Copy
+Edit
+bundle install
+Generate the required migration for Delayed Job and migrate the database:
 
----
+bash
+Copy
+Edit
+rails generate delayed_job:active_record
+rails db:migrate
+Start the Delayed Job worker:
 
-## **1. Initial Request**
+bash
+Copy
+Edit
+bin/delayed_job start
+2. Create a Model for Job Responses
+You’ll need a model to store the ChatGPT responses.
 
-### **Endpoint**
-**POST `/api/ollama_models/query`**
+Generate the model:
 
+bash
+Copy
+Edit
+rails generate model ChatGptJobResponse job_id:string state:string data:text error:text
+Migrate the database:
 
-(An example of the request can be seen at app/views/pages/blank.html.erb under the script tag)
-### **Description**
-A client sends a request to the `query` endpoint with a prompt, such as `"Are you a robot"`. This triggers the following steps:
+bash
+Copy
+Edit
+rails db:migrate
+Add validations to the model (app/models/chat_gpt_job_response.rb):
 
-### **Key Details**
-- **Controller & Method**: 
-  - `Api::OllamaModelsController#query`
-- **Parameters**:
-  - `prompt`: The query text to send to the model.
-- **Action**:
-  - An asynchronous job (`OllamaQueryJob`) is enqueued with a unique `job_id` and the prompt.
+ruby
+Copy
+Edit
+class ChatGptJobResponse < ApplicationRecord
+  validates :job_id, presence: true, uniqueness: true
+end
+3. Set Up the Job
+Create a background job to handle the ChatGPT API call.
 
----
+Generate the job:
 
-## **2. Job Processing**
+bash
+Copy
+Edit
+rails generate job chat_gpt_query
+Update the job file (app/jobs/chat_gpt_query_job.rb):
 
-### **Background Job**
-**`OllamaQueryJob`**
+ruby
+Copy
+Edit
+class ChatGptQueryJob < ApplicationJob
+  queue_as :default
 
-### **Description**
-The enqueued job is processed asynchronously to handle the model query. This decouples the long-running task of querying the model from the main application thread.
+  def perform(prompt, job_id)
+    begin
+      # Call ChatGPT API
+      client = OpenAI::Client.new(access_token: ENV['OPENAI_API_KEY'])
+      response = client.completions(
+        parameters: {
+          model: "gpt-4",
+          prompt: prompt,
+          max_tokens: 150
+        }
+      )
 
-### **Key Details**
-- **Job Arguments**:
-  - `prompt`: `"Are you a robot"`
-  - `job_id`: `e3bc27be-5ad3-47f0-a7f1-8fd786235db6`
-- **Steps**:
-  1. Sends the `prompt` to the model.
-  2. Waits for the model to respond with:
-     - **`response`**: The model's output.
-     - **`done`**: A flag indicating the task is complete.
-  3. Saves the result (`response`, `state`, etc.) in the `ollama_job_responses` table.
+      # Save response in the database
+      job_response = ChatGptJobResponse.find_or_initialize_by(job_id: job_id)
+      job_response.update!(state: 'done', data: response['choices'].first['text'])
+    rescue StandardError => e
+      # Handle errors
+      job_response = ChatGptJobResponse.find_or_initialize_by(job_id: job_id)
+      job_response.update!(state: 'error', error: e.message)
+    end
+  end
+end
+4. Create the Controller
+Create a controller to handle frontend requests and query job statuses.
 
----
+Create app/controllers/api/chat_gpt_models_controller.rb:
 
-## **3. Checking Job Status**
+ruby
+Copy
+Edit
+module Api
+  class ChatGptModelsController < ApplicationController
+    skip_before_action :verify_authenticity_token
 
-### **Endpoint**
-**GET `/api/ollama_models/job_status?job_id=<job_id>`**
+    def query
+      prompt = params[:prompt]
 
-### **Description**
-The client polls the `job_status` endpoint with the `job_id` to check if the job has completed and retrieve its result.
+      if prompt.blank?
+        render json: { error: "Prompt cannot be blank" }, status: :unprocessable_entity
+        return
+      end
 
-### **Key Details**
-- **Controller & Method**:
-  - `Api::OllamaModelsController#job_status`
-- **Parameters**:
-  - `job_id`: The unique identifier for the job.
-- **Actions**:
-  1. Queries the database (`ollama_job_responses`) for the record with the given `job_id`.
-  2. Returns:
-     - If found: The job's current state and result.
-     - If not found: `"pending"` state until the job completes.
+      # Generate a unique job ID
+      job_id = SecureRandom.uuid
 
-### **Example Responses**
-1. **Before Completion**:
-   ```json
-   {
-     "state": "pending"
-   }
-   ```
-2. **After Completion**:
-   ```json
-   {
-     "state": "done",
-     "data": "<think></think>Hi! I'm DeepSeek-R1, an artificial intelligence assistant created by DeepSeek. ..."
-   }
-   ```
+      # Queue the job
+      ChatGptQueryJob.perform_later(prompt, job_id)
 
----
+      # Respond with job ID
+      render json: { job_id: job_id }, status: :accepted
+    end
 
-## **4. Final Job Completion**
+    def job_status
+      job_id = params[:job_id]
+      job_response = ChatGptJobResponse.find_by(job_id: job_id)
 
-### **Background Job Actions**
-Once the job completes:
-1. Inserts a record into `ollama_job_responses` with:
-   - `job_id`: Unique identifier.
-   - `prompt`: Original input.
-   - `state`: `"done"`.
-   - `data`: The model's response.
-2. Commits the transaction, making the result accessible via `job_status`.
+      if job_response
+        render json: {
+          state: job_response.state,
+          data: job_response.data,
+          error: job_response.error
+        }, status: :ok
+      else
+        render json: { state: 'pending' }, status: :ok
+      end
+    end
+  end
+end
+5. Add Routes
+Define routes for the API endpoints.
 
----
+Edit config/routes.rb:
 
-## **Summary of Key Components**
+ruby
+Copy
+Edit
+namespace :api do
+  resources :chat_gpt_models, only: [] do
+    collection do
+      post :query
+      get :job_status
+    end
+  end
+end
+6. Frontend Integration
+To test the API or connect it to your frontend:
 
-| Component                        | Description                                                                 |
-|----------------------------------|-----------------------------------------------------------------------------|
-| **Controller**                   | `Api::OllamaModelsController`                                              |
-| **Query Method**                 | `query`: Enqueues the background job.                                       |
-| **Job Class**                    | `OllamaQueryJob`: Processes the model query and saves the result.           |
-| **Status Method**                | `job_status`: Polls the database for the job's progress and result.         |
-| **Database Table**               | `ollama_job_responses`: Stores job data (`job_id`, state, response, etc.).  |
-| **Polling**                      | Repeated calls to `job_status` track the job's progress.                    |
+Query Endpoint (/api/chat_gpt_models/query):
 
----
+json
+Copy
+Edit
+POST /api/chat_gpt_models/query
+{
+  "prompt": "Your question here"
+}
+Response:
 
-## **Flow Diagram**
+json
+Copy
+Edit
+{
+  "job_id": "123e4567-e89b-12d3-a456-426614174000"
+}
+Job Status Endpoint (/api/chat_gpt_models/job_status):
 
-1. **Client** sends `POST /api/ollama_models/query`.
-2. **Server** enqueues `OllamaQueryJob`:
-   - Generates a `job_id`.
-   - Responds with `202 Accepted`.
-3. **Job Worker** executes `OllamaQueryJob`:
-   - Processes the prompt.
-   - Saves the result to `ollama_job_responses`.
-4. **Client** polls `GET /api/ollama_models/job_status?job_id=<job_id>`:
-   - Returns `"pending"` until complete.
-   - Eventually returns the model's result.
+json
+Copy
+Edit
+GET /api/chat_gpt_models/job_status?job_id=123e4567-e89b-12d3-a456-426614174000
+Response while the job is still running:
 
----
+json
+Copy
+Edit
+{
+  "state": "pending"
+}
+Response when the job is done:
+
+json
+Copy
+Edit
+{
+  "state": "done",
+  "data": "ChatGPT response here",
+  "error": null
+}
+Response if an error occurred:
+
+json
+Copy
+Edit
+{
+  "state": "error",
+  "data": null,
+  "error": "Error message here"
+}
+7. Test the Setup
+Start the Rails server:
+
+bash
+Copy
+Edit
+rails server
+Use a tool like Postman, Curl, or your frontend to send requests.
+
+Monitor the background jobs in Delayed Job:
+
+bash
+Copy
+Edit
+rails jobs:work
+8. Optional: Monitor Delayed Job
+To monitor and manage background jobs, you can use a gem like Delayed Job Web:
+
+Add it to your Gemfile:
+
+ruby
+Copy
+Edit
+gem 'delayed_job_web'
+Mount it in your routes (config/routes.rb):
+
+ruby
+Copy
+Edit
+mount DelayedJobWeb => '/delayed_job'
+Access the web interface at http://localhost:3000/delayed_job.
