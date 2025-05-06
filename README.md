@@ -1,6 +1,6 @@
 # Complete Guide: Setting Up ChatGPT Integration with Delayed Job
 
-This guide walks you through the complete process of integrating ChatGPT with your Rails application using Delayed Job for background processing. It includes all steps and reflects the latest changes to the `ChatGptQueryJob` file.
+This guide walks you through the complete process of integrating ChatGPT with your Rails application using Delayed Job for background processing. It includes all steps and reflects the latest changes to the `ChatGptQueryJob` file. This will require a API key to a account that has API credits
 
 ## 1. Setup Delayed Job
 
