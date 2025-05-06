@@ -1,75 +1,73 @@
-Here's a complete step-by-step guide to set up a ChatGPT integration using Delayed Job for background processing.
+# Complete Guide: Setting Up ChatGPT Integration with Delayed Job
 
-1. Setup Delayed Job
-Add Delayed Job to your Gemfile:
+This guide walks you through the complete process of integrating ChatGPT with your Rails application using Delayed Job for background processing. It includes all steps and reflects the latest changes to the `ChatGptQueryJob` file.
 
-ruby
-Copy
-Edit
+## 1. Setup Delayed Job
+
+### Add Delayed Job to Your Gemfile:
+```ruby
 gem 'delayed_job_active_record'
-Install the gem:
+```
 
-bash
-Copy
-Edit
+### Install the Gem:
+```bash
 bundle install
-Generate the required migration for Delayed Job and migrate the database:
+```
 
-bash
-Copy
-Edit
+### Generate the Required Migration for Delayed Job and Migrate the Database:
+```bash
 rails generate delayed_job:active_record
 rails db:migrate
-Start the Delayed Job worker:
+```
 
-bash
-Copy
-Edit
+### Start the Delayed Job Worker:
+```bash
 bin/delayed_job start
-2. Create a Model for Job Responses
-You’ll need a model to store the ChatGPT responses.
+```
 
-Generate the model:
+---
 
-bash
-Copy
-Edit
+## 2. Create a Model for Job Responses
+
+### Generate the Model:
+```bash
 rails generate model ChatGptJobResponse job_id:string state:string data:text error:text
-Migrate the database:
+```
 
-bash
-Copy
-Edit
+### Migrate the Database:
+```bash
 rails db:migrate
-Add validations to the model (app/models/chat_gpt_job_response.rb):
+```
 
-ruby
-Copy
-Edit
+### Add Validations to the Model:
+Update `app/models/chat_gpt_job_response.rb`:
+```ruby
 class ChatGptJobResponse < ApplicationRecord
   validates :job_id, presence: true, uniqueness: true
 end
-3. Set Up the Job
-Create a background job to handle the ChatGPT API call.
+```
 
-Generate the job:
+---
 
-bash
-Copy
-Edit
+## 3. Set Up the Background Job
+
+### Generate the Job:
+```bash
 rails generate job chat_gpt_query
-Update the job file (app/jobs/chat_gpt_query_job.rb):
+```
 
-ruby
-Copy
-Edit
+### Update the Job File:
+Edit `app/jobs/chat_gpt_query_job.rb`:
+```ruby
 class ChatGptQueryJob < ApplicationJob
   queue_as :default
 
   def perform(prompt, job_id)
     begin
-      # Call ChatGPT API
+      # Initialize OpenAI client
       client = OpenAI::Client.new(access_token: ENV['OPENAI_API_KEY'])
+
+      # Call ChatGPT API
       response = client.completions(
         parameters: {
           model: "gpt-4",
@@ -78,9 +76,12 @@ class ChatGptQueryJob < ApplicationJob
         }
       )
 
-      # Save response in the database
+      # Extract response text
+      response_text = response["choices"]&.first&.dig("text")&.strip
+
+      # Save response to database
       job_response = ChatGptJobResponse.find_or_initialize_by(job_id: job_id)
-      job_response.update!(state: 'done', data: response['choices'].first['text'])
+      job_response.update!(state: 'done', data: response_text)
     rescue StandardError => e
       # Handle errors
       job_response = ChatGptJobResponse.find_or_initialize_by(job_id: job_id)
@@ -88,14 +89,15 @@ class ChatGptQueryJob < ApplicationJob
     end
   end
 end
-4. Create the Controller
-Create a controller to handle frontend requests and query job statuses.
+```
 
-Create app/controllers/api/chat_gpt_models_controller.rb:
+---
 
-ruby
-Copy
-Edit
+## 4. Create the Controller
+
+### Create the Controller File:
+Create `app/controllers/api/chat_gpt_models_controller.rb`:
+```ruby
 module Api
   class ChatGptModelsController < ApplicationController
     skip_before_action :verify_authenticity_token
@@ -134,14 +136,15 @@ module Api
     end
   end
 end
-5. Add Routes
-Define routes for the API endpoints.
+```
 
-Edit config/routes.rb:
+---
 
-ruby
-Copy
-Edit
+## 5. Add Routes
+
+### Define Routes for the API Endpoints:
+Edit `config/routes.rb`:
+```ruby
 namespace :api do
   resources :chat_gpt_models, only: [] do
     collection do
@@ -150,88 +153,92 @@ namespace :api do
     end
   end
 end
-6. Frontend Integration
-To test the API or connect it to your frontend:
+```
 
-Query Endpoint (/api/chat_gpt_models/query):
+---
 
-json
-Copy
-Edit
+## 6. Frontend Integration
+
+### Query Endpoint (`/api/chat_gpt_models/query`):
+#### Request:
+```json
 POST /api/chat_gpt_models/query
 {
   "prompt": "Your question here"
 }
-Response:
+```
 
-json
-Copy
-Edit
+#### Response:
+```json
 {
   "job_id": "123e4567-e89b-12d3-a456-426614174000"
 }
-Job Status Endpoint (/api/chat_gpt_models/job_status):
+```
 
-json
-Copy
-Edit
+### Job Status Endpoint (`/api/chat_gpt_models/job_status`):
+#### Request:
+```json
 GET /api/chat_gpt_models/job_status?job_id=123e4567-e89b-12d3-a456-426614174000
-Response while the job is still running:
+```
 
-json
-Copy
-Edit
+#### Responses:
+While the job is still running:
+```json
 {
   "state": "pending"
 }
-Response when the job is done:
+```
 
-json
-Copy
-Edit
+When the job is done:
+```json
 {
   "state": "done",
   "data": "ChatGPT response here",
   "error": null
 }
-Response if an error occurred:
+```
 
-json
-Copy
-Edit
+If an error occurred:
+```json
 {
   "state": "error",
   "data": null,
   "error": "Error message here"
 }
-7. Test the Setup
-Start the Rails server:
+```
 
-bash
-Copy
-Edit
+---
+
+## 7. Test the Setup
+
+### Start the Rails Server:
+```bash
 rails server
-Use a tool like Postman, Curl, or your frontend to send requests.
+```
 
-Monitor the background jobs in Delayed Job:
+### Use Tools to Test:
+Use tools like Postman, Curl, or your frontend to send requests to the API endpoints.
 
-bash
-Copy
-Edit
+### Monitor Background Jobs:
+```bash
 rails jobs:work
-8. Optional: Monitor Delayed Job
-To monitor and manage background jobs, you can use a gem like Delayed Job Web:
+```
 
-Add it to your Gemfile:
+---
 
-ruby
-Copy
-Edit
+## 8. Optional: Monitor Delayed Job
+
+### Add Monitoring Gem:
+Add the `delayed_job_web` gem to your Gemfile:
+```ruby
 gem 'delayed_job_web'
-Mount it in your routes (config/routes.rb):
+```
 
-ruby
-Copy
-Edit
+### Mount the Web Interface:
+Edit `config/routes.rb`:
+```ruby
 mount DelayedJobWeb => '/delayed_job'
-Access the web interface at http://localhost:3000/delayed_job.
+```
+
+### Access the Interface:
+Visit [http://localhost:3000/delayed_job](http://localhost:3000/delayed_job) to monitor and manage your background jobs.
