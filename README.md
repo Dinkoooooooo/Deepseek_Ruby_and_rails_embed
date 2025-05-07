@@ -63,30 +63,46 @@ class ChatGptQueryJob < ApplicationJob
   queue_as :default
 
   def perform(prompt, job_id)
-    begin
-      # Initialize OpenAI client
-      client = OpenAI::Client.new(access_token: ENV['OPENAI_API_KEY'])
+    # Initialize client with timeout and proper key param
+    client = OpenAI::Client.new(
+      access_token: ENV['OPENAI_API_KEY'], # Changed from api_key to access_token
+      request_timeout: 30                   # Add timeout to prevent hanging
+    )
 
-      # Call ChatGPT API
-      response = client.completions(
-        parameters: {
-          model: "gpt-4",
-          prompt: prompt,
-          max_tokens: 150
-        }
+    # Make the API request
+    response = client.chat(
+      parameters: {
+        model: "gpt-3.5-turbo",
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.7,
+        max_tokens: 1000                    # Add token limit for cost control
+      }
+    )
+
+    # Process response with better error handling
+    if response&.dig('choices', 0, 'message', 'content')
+      content = response['choices'][0]['message']['content']
+      ChatGptJobResponse.find_or_create_by(job_id: job_id).update(
+        state: 'done',
+        data: content,
+        error: nil
       )
-
-      # Extract response text
-      response_text = response["choices"]&.first&.dig("text")&.strip
-
-      # Save response to database
-      job_response = ChatGptJobResponse.find_or_initialize_by(job_id: job_id)
-      job_response.update!(state: 'done', data: response_text)
-    rescue StandardError => e
-      # Handle errors
-      job_response = ChatGptJobResponse.find_or_initialize_by(job_id: job_id)
-      job_response.update!(state: 'error', error: e.message)
+    else
+      raise "Invalid API response: #{response}"
     end
+  rescue OpenAI::Error => e
+    # Specific OpenAI errors
+    ChatGptJobResponse.find_or_create_by(job_id: job_id).update(
+      state: 'error',
+      error: "OpenAI Error: #{e.message}"
+    )
+  rescue => e
+    # General errors
+    ChatGptJobResponse.find_or_create_by(job_id: job_id).update(
+      state: 'error',
+      error: "System Error: #{e.message}"
+    )
+    raise e # Re-raise for job retries if configured
   end
 end
 ```
