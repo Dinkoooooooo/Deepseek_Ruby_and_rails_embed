@@ -2,6 +2,8 @@
 
 This guide walks you through the complete process of integrating ChatGPT with your Rails application using Delayed Job for background processing. It includes all steps and reflects the latest changes to the `ChatGptQueryJob` file. This will require a API key to a account that has API credits
 
+a full working copy is also attached, with no api key in the .env
+
 ## 1. Setup Delayed Job
 
 ### Add Delayed Job to Your Gemfile:
